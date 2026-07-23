@@ -57,6 +57,10 @@ td.mono{font-variant-numeric:tabular-nums}
 tbody tr:hover td:not(.heat):not(.cur),tbody tr:hover .mcol{background:var(--accent-soft)}
 .dimv{color:var(--ink3)}
 td.ge,th.ge{border-right:2px solid var(--ink3)}
+tr.tog .mcol{cursor:pointer}
+.caret{display:inline-block;width:12px;color:var(--accent);font-weight:700;transition:transform .12s}
+tr.open .caret{transform:rotate(90deg)}
+tr.tog:hover .mcol{color:var(--accent)}
 </style>
 </head>
 <body>
@@ -66,6 +70,7 @@ td.ge,th.ge{border-right:2px solid var(--ink3)}
   <div class="f"><label>Clinic</label><select id="fClinic"></select></div>
   <div class="f"><label>Doctor</label><select id="fDoc"></select></div>
   <button id="reset">Reset</button>
+  <button id="expandBtn">Expand all</button>
   <button id="themeBtn">🌙 Dark</button>
   <span class="meta" id="meta"></span>
 </div>
@@ -304,13 +309,30 @@ function rebuildFilters(){
   st.doc=fill(document.getElementById('fDoc'),DOCTORS,dk,st.doc);
 }
 
+/* ---- collapsible outline tree (mirrors the sheet's row grouping) ----
+   Section bands are lvl 0; metric rows are (sheet outline level + 1). A row that
+   has deeper rows right below it is a toggle; the sheet's hidden rows start collapsed. */
+const DISP=[]; {
+  let lastSec='';
+  for(const row of ROWSPEC){
+    if(row.a && row.a!==lastSec){ lastSec=row.a;
+      DISP.push({kind:'sec',lvl:0,name:row.a.replace(/\n/g,' · ').replace('<>',''),key:'S'+DISP.length}); }
+    DISP.push({kind:'row',lvl:(row.lvl||0)+1,row,key:'R'+row.r,hid:!!row.hid});
+  }
+  for(let i=0;i<DISP.length;i++){ let p=-1; for(let j=i-1;j>=0;j--){ if(DISP[j].lvl<DISP[i].lvl){p=j;break;} } DISP[i].parent=p; }
+  for(let i=0;i<DISP.length;i++){ DISP[i].tog = (i+1<DISP.length && DISP[i+1].lvl>DISP[i].lvl); }
+}
+const collapsed={};
+for(let i=0;i<DISP.length;i++){ if(DISP[i].tog){ const ch=DISP[i+1]; if(ch.kind==='row'&&ch.hid) collapsed[DISP[i].key]=true; } }
+function vis(i){ let p=DISP[i].parent; while(p>=0){ if(collapsed[DISP[p].key]) return false; p=DISP[p].parent; } return true; }
+function setAll(v){ for(const d of DISP) if(d.tog) collapsed[d.key]=v; }
+
 /* ---- render ---- */
 function render(){
   const {BUCK,CTX}=compute();
   const NB=BUCK.length;
   // vertical dividers separating the Month | Week | Day groups (after M-2=idx2, W-7=idx10)
   const ge=j=>(j===2||j===10)?' ge':'';
-  // header
   let h1='<tr><th class="mcol">Metric</th>';
   let h2='<tr><th class="mcol"></th>';
   BUCK.forEach((bk,j)=>{const cur=(bk.cur?' cur':'')+ge(j);
@@ -319,18 +341,25 @@ function render(){
   document.querySelector('#grid thead').innerHTML=h1+'</tr>'+h2+'</tr>';
 
   const WHEAT=[]; for(let j=4;j<=10;j++)WHEAT.push(j); // W-1..W-7 columns get the colour scale
-  let body='',zeb=0,lastSec='';
-  for(const row of ROWSPEC){
-    if(row.a && row.a!==lastSec){ lastSec=row.a;
-      const secName=row.a.replace(/\n/g,' · ').replace('<>','');
-      body+=`<tr class="sec"><td class="mcol">${secName}</td><td colspan="${NB}"></td></tr>`;
+  let body='',zeb=0;
+  for(let i=0;i<DISP.length;i++){
+    if(!vis(i)) continue;
+    const d=DISP[i];
+    const caret=d.tog?`<span class="caret">▶</span>`:'';
+    const togCls=d.tog?' tog'+(collapsed[d.key]?'':' open'):'';
+    const pad=(d.lvl-1)*13;
+    if(d.kind==='sec'){
+      body+=`<tr class="sec${togCls}" data-k="${d.key}"><td class="mcol">${caret}${d.name}</td><td colspan="${NB}"></td></tr>`;
+      continue;
     }
+    const row=d.row;
     const vals=BUCK.map((_,j)=>CALC[row.r]?CALC[row.r](CTX[j]):NaN);
     const heat=(row.cf&&row.cf.includes('colorScale'))?heatRange(WHEAT.map(j=>vals[j])):null;
     const zc=(zeb++%2)?' zeb':'';
-    // metric label follows the sheet's B-column alignment (encodes the indent / grouping) and size
     const lAl=row.ba||'left', lSz=Math.max(row.sz,9);
-    body+=`<tr class="${zc}"><td class="mcol" style="text-align:${lAl};font-size:${lSz}px${row.bold?';font-weight:700':''}">${row.m.replace(/\n/g,' ')}</td>`;
+    const lab=d.tog ? `<span style="padding-left:${pad}px">${caret}${row.m.replace(/\n/g,' ')}</span>`
+                    : row.m.replace(/\n/g,' ');
+    body+=`<tr class="${zc}${togCls}" data-k="${d.key}"><td class="mcol" style="text-align:${lAl};font-size:${lSz}px${row.bold?';font-weight:700':''}">${lab}</td>`;
     for(let j=0;j<NB;j++){
       const v=vals[j], cur=BUCK[j].cur?' cur':'';
       const al=row.ca||'right';
@@ -353,6 +382,15 @@ for(const id of ['fCity','fClinic','fDoc'])
     if(id==='fCity'){st.clinic=-1;st.doc=-1;} if(id==='fClinic')st.doc=-1;
     rebuildFilters();render();});
 document.getElementById('reset').addEventListener('click',()=>{st.city=st.clinic=st.doc=-1;rebuildFilters();render();});
+document.querySelector('#grid tbody').addEventListener('click',e=>{
+  const tr=e.target.closest('tr.tog'); if(!tr)return;
+  const k=tr.dataset.k; collapsed[k]=!collapsed[k]; render();
+});
+let allExpanded=false;
+document.getElementById('expandBtn').addEventListener('click',()=>{
+  allExpanded=!allExpanded; setAll(!allExpanded); render();
+  document.getElementById('expandBtn').textContent=allExpanded?'Collapse all':'Expand all';
+});
 const themeBtn=document.getElementById('themeBtn');
 function applyTheme(t){document.documentElement.dataset.theme=t;themeBtn.textContent=t==='dark'?'☀️ Light':'🌙 Dark';try{localStorage.setItem('micro-theme',t)}catch(e){}}
 themeBtn.addEventListener('click',()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
