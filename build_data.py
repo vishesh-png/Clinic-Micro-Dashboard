@@ -32,7 +32,7 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, 'data.json')
 wb = openpyxl.load_workbook(XLSX, read_only=True, data_only=True)
 
 # ---- shared dimension registries (display name + casefold match, Excel-style) ----
-cities, clinics, doctors, channels, patients, diags = {}, {}, {}, {}, {}, {}
+cities, clinics, doctors, channels, patients, diags, consults = {}, {}, {}, {}, {}, {}, {}
 def reg(d, name):
     key = (name or '').strip()
     if key not in d:
@@ -125,16 +125,14 @@ sh = wb['RD - Pat level B2D']
 for r in sh.iter_rows(min_row=2, values_only=True):
     if not r or r[0] is None: continue
     typ = str(r[4]).strip() if len(r) > 4 and r[4] is not None else ''
-    tl = typ.lower()
-    if tl == 'screening call': tf = 0
-    elif tl == 'follow up': tf = 1
-    else: continue  # only SC + FU feed the tabs
+    # SC tabs count "Screening Call"; the Repeat/FU tab counts everything else (<>Screening Call)
+    tf = 0 if typ.lower() == 'screening call' else 1
     o = dayoff(r[0])
     ci = reg(cities, r[5]); cl = reg(clinics, r[6]); doc = reg(doctors, r[3])
-    pt = reg(patients, r[1])
+    pt = reg(patients, r[1]); cons = reg(consults, r[2])
     off = 1 if (len(r) > 9 and r[9] in (1, 1.0, '1', True)) else 0
     comp = 1 if (len(r) > 7 and str(r[7]).strip().upper() == 'COMPLETED') else 0
-    pat.append((o, ci, cl, doc, pt, tf, off, comp))
+    pat.append((o, ci, cl, doc, pt, cons, tf, off, comp))
 
 wb.close()
 
@@ -157,7 +155,7 @@ data = {
     'avail': [[rb(k[0]), k[1], k[2], k[3]] + [round(v[0], 2), round(v[1], 2), round(v[2], 2), round(v[3], 2), v[4]] for k, v in avail.items()],
     'book':  [[rb(k[0]), k[1], k[2], k[3]] + [round(x, 2) for x in v] for k, v in book.items()],
     'd2p':   [[rb(k[0]), k[1], k[2], k[3], k[4]] + [round(x, 2) for x in v] for k, v in d2p.items()],
-    'pat':   [[rb(p[0]), p[1], p[2], p[3], p[4], p[5], p[6], p[7]] for p in pat],
+    'pat':   [[rb(p[0]), p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8]] for p in pat],
 }
 bd = date.fromordinal(base)
 md = date.fromordinal(base + maxoff)

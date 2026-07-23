@@ -170,15 +170,15 @@ function compute(){
     // contracted: days in [s,e] excluding Wednesday (mask 1101111 -> only Wed is off)
     let contracted=0; for(let day=Math.max(0,s);day<=Math.min(SPAN-1,e);day++){ if(addD(BASE,day).getUTCDay()!==3)contracted++; }
     // patient unique (tab-specific)
+    // r: [day,ci,cl,doc,patI,consI,typeFlag(0=SC,1=FU),offlineFlag,completed]
     const bset=new Set(),dset=new Set();
     for(const r of patF){ const day=r[0]; if(day<s||day>e)continue;
-      // r: [day,ci,cl,doc,pat,typeFlag(0=SC,1=FU),offlineFlag,completed]
-      let ok=false;
-      if(TAB==='offline') ok=(r[5]===0&&r[6]===1);
-      else if(TAB==='online') ok=(r[5]===0&&r[6]===0);
-      else ok=(r[5]===1);   // repeat = Follow Up
+      let ok=false, id;
+      if(TAB==='offline'){ ok=(r[6]===0&&r[7]===1); id=r[4]; }
+      else if(TAB==='online'){ ok=(r[6]===0&&r[7]===0); id=r[4]; }
+      else { ok=(r[6]===1); id=r[5]; }   // repeat/FU: Follow Up, count consultations
       if(!ok)continue;
-      bset.add(r[4]); if(r[7]===1)dset.add(r[4]);
+      bset.add(id); if(r[8]===1)dset.add(id);
     }
     const dDiag=P.DdD.map(arr=>arr.map(pre=>rs(pre)));   // [ND][41]
     const dOverall=new Array(42).fill(0);
@@ -192,80 +192,75 @@ function compute(){
   return {BUCK,CTX};
 }
 
-/* ---- row formulas (Offline). ratio helper returns NaN on /0 -> shows "-" ---- */
+/* ---- generic tab-parameterized formula builder ----
+   Same metrics across Offline/Online/Repeat; only the channel column offsets differ.
+   d2p vector positions: base + channel offset (online=0, offline=1, repeat=2).
+   book positions: base + channel offset (offline=0, online=1, repeat=2). */
 const R=(n,d)=>d?n/d:NaN;
-const CALC={
- 6:c=>R(c.rev.overall,c.act), 7:c=>c.rev.overall, 8:c=>c.rev.off, 9:c=>c.rev.on, 10:c=>c.rev.rep, 11:c=>c.rev.oth,
- 12:c=>R(c.rev.rep,c.rev.overall),
- 14:c=>R(c.u[2]+c.u[8]+c.u[4],c.u[1]+c.u[7]), 15:c=>R(c.u[2]+c.u[4],c.u[1]), 16:c=>R(c.u[8],c.u[7]),
- 17:c=>R(c.u[3]+c.u[9]+c.u[5],c.u[1]+c.u[7]), 18:c=>R(c.u[3]+c.u[5],c.u[1]), 19:c=>R(c.u[9],c.u[7]),
- 20:c=>c.u[1], 21:c=>c.u[7], 22:c=>c.u[2], 23:c=>c.u[8], 24:c=>c.u[4], 25:c=>c.u[3], 26:c=>c.u[9], 27:c=>c.u[5],
- 28:c=>R(c.u[1],c.u[0]), 29:c=>R(c.u[7],c.u[6]),
- 31:c=>c.act, 32:c=>c.contracted, 33:c=>R(c.act,c.contracted), 34:c=>c.wd, 35:c=>c.we,
- 37:c=>c.roster/60, 38:c=>c.shrink/60, 39:c=>R(c.shrink,c.roster), 40:c=>R((c.roster-c.shrink)/60,c.act),
- 41:c=>(c.roster-c.shrink)/60, 42:c=>c.act?Math.round(c.netSC/60/c.act*100)/100:NaN, 43:c=>c.act?Math.round(c.netRpt/60/c.act*100)/100:NaN,
- 45:c=>c.bookP, 46:c=>c.doneP, 47:c=>R(c.doneP,c.bookP),
- 49:c=>c.b[6], 50:c=>c.b[15]+c.b[18], 51:c=>c.b[15], 52:c=>c.b[18], 53:c=>c.b[9], 54:c=>c.b[12],
- 55:c=>c.b[6]-(c.b[15]+c.b[18])-c.b[9]-c.b[12],
- 56:c=>R(c.b[9],c.b[18]+c.b[9]+c.b[12]), 57:c=>R(c.b[15]+c.b[18],c.b[6]), 58:c=>R(c.b[9],c.b[6]), 59:c=>R(c.b[12],c.b[6]),
- 60:c=>R(c.b[6]-(c.b[15]+c.b[18])-c.b[9]-c.b[12],c.b[6]),
- 62:c=>c.b[6]-((c.b[15]+c.b[18])+(c.b[6]-(c.b[15]+c.b[18])-c.b[9]-c.b[12])),
- 63:c=>c.b[21], 64:c=>R(c.b[21],c.b[6]), 65:c=>c.b[25], 66:c=>R(c.b[25],c.b[21]),
- 67:c=>c.b[22], 68:c=>R(c.b[22],c.b[6]), 69:c=>c.b[26], 70:c=>R(c.b[26],c.b[22]),
- 71:c=>c.b[23], 72:c=>R(c.b[23],c.b[6]), 73:c=>c.b[27], 74:c=>R(c.b[27],c.b[23]),
- 75:c=>c.b[24], 76:c=>R(c.b[24],c.b[6]), 77:c=>c.b[28], 78:c=>R(c.b[28],c.b[24]),
- 80:c=>c.b[29], 81:c=>R(c.b[29],c.b[6]), 82:c=>c.b[30], 83:c=>R(c.b[30],c.b[29]),
- 84:c=>c.b[31], 85:c=>R(c.b[31],c.b[29]), 86:c=>c.b[32], 87:c=>R(c.b[32],c.b[29]),
- 88:c=>c.b[33], 89:c=>R(c.b[33],c.b[32]), 90:c=>c.b[34], 91:c=>R(c.b[34],c.b[29]), 92:c=>c.b[35], 93:c=>R(c.b[35],c.b[34]),
- 95:c=>c.d[1], 96:c=>R(c.d[28]+c.d[34]+c.d[40],c.d[1]), 97:c=>c.d[4], 98:c=>R(CALC[99](c),CALC[96](c)),
- 99:c=>R(c.d[10]+c.d[16]+c.d[22],c.d[4]), 100:c=>{const v=CALC[99](c)*CALC[98](c);return isFinite(v)?v:NaN;},
- 102:c=>c.d[25], 103:c=>R(c.d[25],c.d[1]), 104:c=>R(c.d[28],c.d[25]), 105:c=>c.d[7], 106:c=>R(c.d[7],c.d[25]),
- 107:c=>R(c.d[10],c.d[7]), 108:c=>R(c.d[10],c.d[1]),
- // Overall Test (110-116) & Therapy (118-124)
- 110:c=>c.d[31],111:c=>R(c.d[31],c.d[1]),112:c=>R(c.d[34],c.d[31]),113:c=>c.d[13],114:c=>R(c.d[13],c.d[31]),115:c=>R(c.d[16],c.d[13]),116:c=>R(c.d[16],c.d[1]),
- 118:c=>c.d[37],119:c=>R(c.d[37],c.d[1]),120:c=>R(c.d[40],c.d[37]),121:c=>c.d[19],122:c=>R(c.d[19],c.d[37]),123:c=>R(c.d[22],c.d[19]),124:c=>R(c.d[22],c.d[1])
-};
-/* Per-diagnosis blocks (126-327): identical 28-row structure filtered by diagnosis */
+const TABP={offline:{co:1,bo:0},online:{co:0,bo:1},repeat:{co:2,bo:2}}[TAB];
+const co=TABP.co, bo=TABP.bo;
 const DIAG_IDX={}; DATA.diagnoses.forEach((n,i)=>DIAG_IDX[cf(n)]=i);
-const BLOCKS=[[126,'mh'],[155,'ed+'],[184,'ed+pe+'],[213,'pe+'],[242,'sti'],[271,'oth'],[300,'nos']];
-// offset -> function(dd, allCalls). dd = this diagnosis's 41-vector; allCalls = overall calls done (c.d[1])
-const BOFF=[
- (dd,a)=>R(dd[1],a),         // 0 Contribution
- (dd,a)=>dd[1],              // 1 Calls Done
- (dd,a)=>R(dd[28]+dd[34]+dd[40],dd[1]), // 2 Pres AOV
- (dd,a)=>dd[4],              // 3 Converted
- (dd,a)=>R(dd[4],dd[1]),     // 4 Conversion
- (dd,a)=>R(dd[10]+dd[16]+dd[22],dd[4]), // 5 AOV
- (dd,a)=>{const cv=R(dd[10]+dd[16]+dd[22],dd[4]),cn=R(dd[4],dd[1]);return isFinite(cv*cn)?cv*cn:NaN;}, // 6 RPC
- (dd,a)=>dd[25],             // 7 Calls Meds pres
- (dd,a)=>R(dd[25],dd[1]),    // 8 %
- (dd,a)=>R(dd[28],dd[25]),   // 9 Prescribe value
- (dd,a)=>dd[7],              // 10 Meds Conversion
- (dd,a)=>R(dd[7],dd[25]),    // 11 %
- (dd,a)=>R(dd[10],dd[7]),    // 12 Conversion Value
- (dd,a)=>R(dd[10],dd[1]),    // 13 Meds RPC
- (dd,a)=>dd[31],             // 14 Calls Test pres
- (dd,a)=>R(dd[31],dd[1]),    // 15 %
- (dd,a)=>R(dd[34],dd[31]),   // 16 Prescribe value
- (dd,a)=>dd[13],             // 17 Test Conversion
- (dd,a)=>R(dd[13],dd[31]),   // 18 %
- (dd,a)=>R(dd[16],dd[13]),   // 19 Conversion Value
- (dd,a)=>R(dd[16],dd[1]),    // 20 Test RPC
- (dd,a)=>dd[37],             // 21 Calls Therapy pres
- (dd,a)=>R(dd[37],dd[1]),    // 22 %
- (dd,a)=>R(dd[40],dd[37]),   // 23 Prescribe value
- (dd,a)=>dd[19],             // 24 Therapy Conversion
- (dd,a)=>R(dd[19],dd[37]),   // 25 %
- (dd,a)=>R(dd[22],dd[19]),   // 26 Conversion Value
- (dd,a)=>R(dd[22],dd[1])     // 27 Therapy RPC
-];
-for(const [start,dlab] of BLOCKS){
-  const gi=DIAG_IDX[dlab];
-  for(let o=0;o<BOFF.length;o++){
-    const fn=BOFF[o];
-    CALC[start+o]=(c=>{ const dd=(gi==null)?new Array(41).fill(0):c.dDiag[gi]; return fn(dd,c.d[1]); });
-  }
+
+// D2P block helpers (dget: ctx -> 42-vector). Positions are channel bases +co.
+const medsBlk=g=>[c=>g(c)[24+co],c=>R(g(c)[24+co],g(c)[0+co]),c=>R(g(c)[27+co],g(c)[24+co]),
+  c=>g(c)[6+co],c=>R(g(c)[6+co],g(c)[24+co]),c=>R(g(c)[9+co],g(c)[6+co]),c=>R(g(c)[9+co],g(c)[0+co])];
+const testBlk=g=>[c=>g(c)[30+co],c=>R(g(c)[30+co],g(c)[0+co]),c=>R(g(c)[33+co],g(c)[30+co]),
+  c=>g(c)[12+co],c=>R(g(c)[12+co],g(c)[30+co]),c=>R(g(c)[15+co],g(c)[12+co]),c=>R(g(c)[15+co],g(c)[0+co])];
+const therBlk=g=>[c=>g(c)[36+co],c=>R(g(c)[36+co],g(c)[0+co]),c=>R(g(c)[39+co],g(c)[36+co]),
+  c=>g(c)[18+co],c=>R(g(c)[18+co],g(c)[36+co]),c=>R(g(c)[21+co],g(c)[18+co]),c=>R(g(c)[21+co],g(c)[0+co])];
+const coreBlk=g=>[c=>g(c)[0+co],c=>R(g(c)[27+co]+g(c)[33+co]+g(c)[39+co],g(c)[0+co]),c=>g(c)[3+co],
+  c=>R(g(c)[3+co],g(c)[0+co]),c=>R(g(c)[9+co]+g(c)[15+co]+g(c)[21+co],g(c)[3+co]),
+  c=>{const d=g(c),a=R(d[9+co]+d[15+co]+d[21+co],d[3+co]),n=R(d[3+co],d[0+co]);return isFinite(a*n)?a*n:NaN;}];
+const prescribeBlk=g=>medsBlk(g).concat(testBlk(g),therBlk(g));           // 21
+const diagBlk=gi=>{const g=c=>c.dDiag[gi];
+  return [c=>R(g(c)[0+co],c.d[0+co])].concat(coreBlk(g),prescribeBlk(g));}; // 28
+
+const REV_FNS=[c=>R(c.rev.overall,c.act),c=>c.rev.overall,c=>c.rev.off,c=>c.rev.on,c=>c.rev.rep,c=>c.rev.oth,c=>R(c.rev.rep,c.rev.overall)];
+const UTIL_FNS=[c=>R(c.u[2]+c.u[8]+c.u[4],c.u[1]+c.u[7]),c=>R(c.u[2]+c.u[4],c.u[1]),c=>R(c.u[8],c.u[7]),
+  c=>R(c.u[3]+c.u[9]+c.u[5],c.u[1]+c.u[7]),c=>R(c.u[3]+c.u[5],c.u[1]),c=>R(c.u[9],c.u[7]),
+  c=>c.u[1],c=>c.u[7],c=>c.u[2],c=>c.u[8],c=>c.u[4],c=>c.u[3],c=>c.u[9],c=>c.u[5],c=>R(c.u[1],c.u[0]),c=>R(c.u[7],c.u[6])];
+const AVAILD_FNS=[c=>c.act,c=>c.contracted,c=>R(c.act,c.contracted),c=>c.wd,c=>c.we];
+const AVAILH_FNS=[c=>c.roster/60,c=>c.shrink/60,c=>R(c.shrink,c.roster),c=>R((c.roster-c.shrink)/60,c.act),
+  c=>(c.roster-c.shrink)/60,c=>c.act?Math.round(c.netSC/60/c.act*100)/100:NaN,c=>c.act?Math.round(c.netRpt/60/c.act*100)/100:NaN];
+const PAT_FNS=[c=>c.bookP,c=>c.doneP,c=>R(c.doneP,c.bookP)];
+const SLOT_FNS=[c=>c.b[6+bo],c=>c.b[15+bo]+c.b[18+bo],c=>c.b[15+bo],c=>c.b[18+bo],c=>c.b[9+bo],c=>c.b[12+bo],
+  c=>c.b[6+bo]-(c.b[15+bo]+c.b[18+bo])-c.b[9+bo]-c.b[12+bo],
+  c=>R(c.b[9+bo],c.b[18+bo]+c.b[9+bo]+c.b[12+bo]),
+  c=>R(c.b[15+bo]+c.b[18+bo],c.b[6+bo]),c=>R(c.b[9+bo],c.b[6+bo]),c=>R(c.b[12+bo],c.b[6+bo]),
+  c=>R(c.b[6+bo]-(c.b[15+bo]+c.b[18+bo])-c.b[9+bo]-c.b[12+bo],c.b[6+bo]),
+  c=>c.b[6+bo]-((c.b[15+bo]+c.b[18+bo])+(c.b[6+bo]-(c.b[15+bo]+c.b[18+bo])-c.b[9+bo]-c.b[12+bo]))];
+// task funnel columns are single (offline only); fixed positions 21-35
+const TASK1_FNS=[c=>c.b[21],c=>R(c.b[21],c.b[6]),c=>c.b[25],c=>R(c.b[25],c.b[21]),
+  c=>c.b[22],c=>R(c.b[22],c.b[6]),c=>c.b[26],c=>R(c.b[26],c.b[22]),
+  c=>c.b[23],c=>R(c.b[23],c.b[6]),c=>c.b[27],c=>R(c.b[27],c.b[23]),
+  c=>c.b[24],c=>R(c.b[24],c.b[6]),c=>c.b[28],c=>R(c.b[28],c.b[24])];
+const TASK2_FNS=[c=>c.b[29],c=>R(c.b[29],c.b[6]),c=>c.b[30],c=>R(c.b[30],c.b[29]),
+  c=>c.b[31],c=>R(c.b[31],c.b[29]),c=>c.b[32],c=>R(c.b[32],c.b[29]),
+  c=>c.b[33],c=>R(c.b[33],c.b[32]),c=>c.b[34],c=>R(c.b[34],c.b[29]),c=>c.b[35],c=>R(c.b[35],c.b[34])];
+
+function fnsForSection(a){
+  const s=(a||'').replace(/\n/g,' ').replace(/\s+/g,' ').trim();
+  if(s==='Revenue')return REV_FNS;
+  if(s==='Utlisation')return UTIL_FNS;
+  if(s==='Availability (days)')return AVAILD_FNS;
+  if(s.indexOf('Availabilities')===0)return AVAILH_FNS;
+  if(s.indexOf('Patient level')===0||s.indexOf('Consultation level')===0)return PAT_FNS;
+  if(s.indexOf('Slot level')===0)return SLOT_FNS;
+  if(s.indexOf('Task not created')>=0)return TASK1_FNS;
+  if(s.indexOf('Task created')>=0)return TASK2_FNS;
+  if(s==='<>D2P')return coreBlk(c=>c.d);
+  if(s.indexOf('Overall Prescribe')>=0)return prescribeBlk(c=>c.d);
+  const gi=DIAG_IDX[cf(s)];
+  if(gi!=null)return diagBlk(gi);
+  return null;
 }
+const CALC={};
+(function(){ let fns=null,idx=0;
+  for(const row of ROWSPEC){
+    if(row.a){ fns=fnsForSection(row.a); idx=0; }
+    if(fns && idx<fns.length){ CALC[row.r]=fns[idx]; idx++; }
+  }
+})();
 
 /* ---- formatting ---- */
 const nfC=new Intl.NumberFormat('en-IN',{maximumFractionDigits:0});
