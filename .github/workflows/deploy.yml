@@ -1,0 +1,47 @@
+name: Build & deploy micro dashboard
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install openpyxl
+      - name: Refresh data from Google Sheet (fallback to committed data.json)
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+        run: |
+          if [ -z "$SHEET_ID" ]; then
+            echo "No SHEET_ID — using committed data.json"; test -f data.json || exit 1; exit 0
+          fi
+          curl -sL "https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx" -o sheet.xlsx
+          if ! file sheet.xlsx | grep -qiE 'zip|excel|microsoft'; then
+            echo '::error::sheet download failed'; head -c 200 sheet.xlsx; exit 1; fi
+          python build_data.py sheet.xlsx
+      - name: Build tabs
+        run: python build_micro.py
+      - name: Stage site
+        run: |
+          mkdir -p _site
+          cp offline.html _site/index.html
+          cp offline.html _site/offline.html
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: _site }
+      - id: deployment
+        uses: actions/deploy-pages@v4

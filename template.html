@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Micro Demand — Summary</title>
+<style>
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --ink:#1a1d21; --ink2:#5f6672; --ink3:#8a919d;
+  --line:#d9dde3; --line2:#eceef2; --head:#eef1f5; --section:#e6ebf3; --accent:#155eef;
+  --accent-soft:#eef4ff; --cur:#e9f1ff; --zebra:#f7f9fc; --heatink:#1a1d21;
+  --shadow:0 1px 3px rgba(16,24,40,.10);
+}
+:root[data-theme="dark"]{
+  --bg:#0f1216; --surface:#161a20; --ink:#e6e9ee; --ink2:#9aa3b0; --ink3:#6b7482;
+  --line:#2a303a; --line2:#20252d; --head:#1c222b; --section:#222a37; --accent:#6ea8ff;
+  --accent-soft:#182233; --cur:#182a44; --zebra:#141922; --heatink:#12151a;
+  --shadow:0 1px 3px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:12px/1.4 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden}
+.bar{flex:none;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;
+  padding:12px 18px;border-bottom:1px solid var(--line);background:var(--surface)}
+.ttl{font-size:14px;font-weight:700;margin-right:8px;align-self:center}
+.f{display:flex;flex-direction:column;gap:3px}
+.f label{font-size:10px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.04em}
+select{min-width:150px;padding:6px 9px;border:1px solid var(--line);border-radius:7px;
+  background:var(--bg);color:var(--ink);font:inherit;font-size:12px}
+button{padding:6px 11px;border:1px solid var(--line);border-radius:7px;background:var(--bg);
+  color:var(--ink2);font:inherit;font-size:11.5px;cursor:pointer;align-self:flex-end}
+button:hover{color:var(--ink);border-color:var(--ink3)}
+.meta{font-size:11px;color:var(--ink3);margin-left:auto;align-self:center}
+.wrap{flex:1;overflow:auto}
+table{border-collapse:separate;border-spacing:0;background:var(--surface);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+th,td{border-right:1px solid var(--line2);border-bottom:1px solid var(--line2);
+  padding:2px 8px;height:20px;text-align:center}
+thead th{position:sticky;background:var(--head);z-index:5;font-weight:600;color:var(--ink2);font-size:11px}
+thead tr:nth-child(1) th{top:0}
+thead tr:nth-child(2) th{top:22px}
+.mcol{position:sticky;left:0;background:var(--surface);text-align:left;z-index:4;
+  min-width:250px;max-width:250px;overflow:hidden;text-overflow:ellipsis;
+  border-right:1px solid var(--line)}
+thead .mcol{z-index:6;background:var(--head);font-size:11px}
+tr.sec td{background:var(--section);font-weight:700;color:var(--ink);font-size:11.5px;
+  border-top:2px solid var(--line)}
+tr.sec .mcol{background:var(--section);box-shadow:inset 3px 0 0 var(--accent)}
+td.cur{background:var(--cur);border-left:2px solid var(--accent)}
+th.cur{background:var(--cur);border-left:2px solid var(--accent);color:var(--ink)}
+tr.zeb td:not(.heat),tr.zeb .mcol{background:var(--zebra)}
+.heat{color:var(--heatink)!important}
+td.mono{font-variant-numeric:tabular-nums}
+.grp{color:var(--ink3);font-size:10px;font-weight:600;padding-left:8px}
+tbody tr:hover td:not(.heat):not(.cur),tbody tr:hover .mcol{background:var(--accent-soft)}
+.dimv{color:var(--ink3)}
+</style>
+</head>
+<body>
+<div class="bar">
+  <span class="ttl">Micro Demand · Offline</span>
+  <div class="f"><label>City</label><select id="fCity"></select></div>
+  <div class="f"><label>Clinic</label><select id="fClinic"></select></div>
+  <div class="f"><label>Doctor</label><select id="fDoc"></select></div>
+  <button id="reset">Reset</button>
+  <button id="themeBtn">🌙 Dark</button>
+  <span class="meta" id="meta"></span>
+</div>
+<div class="wrap"><table id="grid"><thead></thead><tbody></tbody></table></div>
+<script>
+const DATA = /*__DATA__*/null;
+const ROWSPEC = /*__ROWSPEC__*/null;
+const TAB = /*__TAB__*/'offline';   // offline | online | repeat
+const CITIES=DATA.cities, CLINICS=DATA.clinics, DOCTORS=DATA.doctors, CHAN=DATA.channels, SPAN=DATA.span_days;
+const BASE=new Date(Date.UTC(DATA.base_date[0],DATA.base_date[1]-1,DATA.base_date[2]));
+const DMAX=new Date(Date.UTC(DATA.data_max[0],DATA.data_max[1]-1,DATA.data_max[2]));
+const DAYMS=86400000;
+const off=d=>Math.round((d-BASE)/DAYMS);
+const addD=(d,n)=>new Date(d.getTime()+n*DAYMS);
+const som=d=>new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1));
+const eom=d=>new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0));
+const wkMon=d=>(d.getUTCDay()+6)%7+1;   // Mon=1..Sun=7
+
+/* today = system date (Excel TODAY()). C2 = today-1 (last complete day). */
+const now=new Date();
+const TODAY=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()));
+function buildBuckets(){
+  const C2=addD(TODAY,-1), C1=som(C2);
+  const D1=addD(C1,-1), M1s=som(D1), M1e=eom(M1s);
+  const E1=addD(M1s,-1), M2s=som(E1), M2e=eom(M2s);
+  const lastSun=addD(TODAY,-wkMon(TODAY));   // G2
+  const b=[];
+  b.push({lab:'M-0',sub:fmtRange(C1,C2),s:off(C1),e:off(C2),kind:'m',cur:true});
+  b.push({lab:'M-1',sub:fmtRange(M1s,M1e),s:off(M1s),e:off(M1e),kind:'m'});
+  b.push({lab:'M-2',sub:fmtRange(M2s,M2e),s:off(M2s),e:off(M2e),kind:'m'});
+  // weeks: W-0 partial (this Mon..today-... actually F2=TODAY) then W-1..W-7
+  const w0s=addD(lastSun,1), w0e=TODAY;
+  b.push({lab:'W-0',sub:fmtRange(w0s,w0e),s:off(w0s),e:off(w0e),kind:'w'});
+  for(let k=1;k<=7;k++){
+    const end=addD(lastSun,-7*(k-1)), start=addD(end,-6);
+    b.push({lab:'W-'+k,sub:fmtRange(start,end),s:off(start),e:off(end),kind:'w'});
+  }
+  // days D-0..D-7 (single days, D-0 = today-1)
+  for(let k=0;k<=7;k++){
+    const dd=addD(TODAY,-1-k);
+    b.push({lab:'D-'+k,sub:fmtDay(dd),s:off(dd),e:off(dd),kind:'d'});
+  }
+  return b;
+}
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fmtDay=d=>String(d.getUTCDate()).padStart(2,'0')+' '+MON[d.getUTCMonth()];
+const fmtRange=(a,b)=>fmtDay(a)+'–'+fmtDay(b);
+
+/* ---- filter state ---- */
+const st={city:-1,clinic:-1,doc:-1};
+const cf=s=>(s||'').trim().toLowerCase();
+
+/* ---- per-render component accumulation ---- */
+function match(recCity,recClinic,recDoc){
+  return (st.city<0||recCity===st.city)&&(st.clinic<0||recClinic===st.clinic)&&(st.doc<0||recDoc===st.doc);
+}
+function prefix(daily){const p=new Float64Array(SPAN+1);for(let i=0;i<SPAN;i++)p[i+1]=p[i]+daily[i];return p;}
+function rangeSum(pre,s,e){s=Math.max(0,Math.min(SPAN,s));e=Math.max(-1,Math.min(SPAN-1,e));return e<s?0:pre[e+1]-pre[s];}
+
+function compute(){
+  // daily arrays
+  const revD=[[],[],[],[],[]];  // overall,off,on,rep(map by channel)
+  const chIdx={};CHAN.forEach((c,i)=>chIdx[cf(c)]=i);
+  const revAll=new Float64Array(SPAN), revOff=new Float64Array(SPAN), revOn=new Float64Array(SPAN),
+        revRep=new Float64Array(SPAN), revOth=new Float64Array(SPAN);
+  for(const r of DATA.rev){ if(!match(r[1],r[2],r[3]))continue; const day=r[0],v=r[5],ch=cf(CHAN[r[4]]);
+    revAll[day]+=v;
+    if(ch==='new offline')revOff[day]+=v; else if(ch==='new online')revOn[day]+=v;
+    else if(ch==='repeat')revRep[day]+=v; else revOth[day]+=v; }
+  const U=[]; for(let i=0;i<10;i++)U.push(new Float64Array(SPAN));
+  for(const r of DATA.util){ if(!match(r[1],r[2],r[3]))continue; const day=r[0];
+    for(let i=0;i<10;i++)U[i][day]+=r[4+i]; }
+  const roster=new Float64Array(SPAN),shrink=new Float64Array(SPAN),netSC=new Float64Array(SPAN),netRpt=new Float64Array(SPAN);
+  const activeByDay=new Float64Array(SPAN);
+  for(const r of DATA.avail){ if(!match(r[1],r[2],r[3]))continue; const day=r[0];
+    roster[day]+=r[4];shrink[day]+=r[5];netSC[day]+=r[6];netRpt[day]+=r[7];
+    if(r[6]>0)activeByDay[day]=1; }
+  const B=[]; for(let i=0;i<36;i++)B.push(new Float64Array(SPAN));
+  for(const r of DATA.book){ if(!match(r[1],r[2],r[3]))continue; const day=r[0];
+    for(let i=0;i<36;i++)B[i][day]+=r[4+i]; }
+  const Dd=[]; for(let i=0;i<41;i++)Dd.push(new Float64Array(SPAN));
+  for(const r of DATA.d2p){ if(!match(r[1],r[2],r[3]))continue; const day=r[0];
+    for(let i=0;i<41;i++)Dd[i][day]+=r[4+i]; }
+  // patients subset (filter)
+  const patF=[]; for(const r of DATA.pat){ if(match(r[1],r[2],r[3]))patF.push(r); }
+
+  // prefixes
+  const P={revAll:prefix(revAll),revOff:prefix(revOff),revOn:prefix(revOn),revRep:prefix(revRep),revOth:prefix(revOth),
+    U:U.map(prefix),roster:prefix(roster),shrink:prefix(shrink),netSC:prefix(netSC),netRpt:prefix(netRpt),
+    B:B.map(prefix),Dd:Dd.map(prefix)};
+
+  const BUCK=buildBuckets();
+  // per bucket ctx
+  const CTX=BUCK.map(bk=>{
+    const s=bk.s,e=bk.e;
+    const rs=(pre)=>rangeSum(pre,s,e);
+    // active days / weekday / weekend / contracted computed from dates
+    let act=0,wd=0,we=0;
+    for(let day=Math.max(0,s);day<=Math.min(SPAN-1,e);day++){
+      if(activeByDay[day]){ act++; const dt=addD(BASE,day); const dow=dt.getUTCDay(); if(dow===0||dow===6)we++; else wd++; }
+    }
+    // contracted: days in [s,e] excluding Wednesday (mask 1101111 -> only Wed is off)
+    let contracted=0; for(let day=Math.max(0,s);day<=Math.min(SPAN-1,e);day++){ if(addD(BASE,day).getUTCDay()!==3)contracted++; }
+    // patient unique (tab-specific)
+    const bset=new Set(),dset=new Set();
+    for(const r of patF){ const day=r[0]; if(day<s||day>e)continue;
+      // r: [day,ci,cl,doc,pat,typeFlag(0=SC,1=FU),offlineFlag,completed]
+      let ok=false;
+      if(TAB==='offline') ok=(r[5]===0&&r[6]===1);
+      else if(TAB==='online') ok=(r[5]===0&&r[6]===0);
+      else ok=(r[5]===1);   // repeat = Follow Up
+      if(!ok)continue;
+      bset.add(r[4]); if(r[7]===1)dset.add(r[4]);
+    }
+    return {rev:{overall:rs(P.revAll),off:rs(P.revOff),on:rs(P.revOn),rep:rs(P.revRep),oth:rs(P.revOth)},
+      u:P.U.map(pre=>rs(pre)),
+      roster:rs(P.roster),shrink:rs(P.shrink),netSC:rs(P.netSC),netRpt:rs(P.netRpt),
+      b:P.B.map(pre=>rs(pre)), d:P.Dd.map(pre=>rs(pre)),
+      act,wd,we,contracted, bookP:bset.size, doneP:dset.size};
+  });
+  return {BUCK,CTX};
+}
+
+/* ---- row formulas (Offline). ratio helper returns NaN on /0 -> shows "-" ---- */
+const R=(n,d)=>d?n/d:NaN;
+const CALC={
+ 6:c=>R(c.rev.overall,c.act), 7:c=>c.rev.overall, 8:c=>c.rev.off, 9:c=>c.rev.on, 10:c=>c.rev.rep, 11:c=>c.rev.oth,
+ 12:c=>R(c.rev.rep,c.rev.overall),
+ 14:c=>R(c.u[2]+c.u[8]+c.u[4],c.u[1]+c.u[7]), 15:c=>R(c.u[2]+c.u[4],c.u[1]), 16:c=>R(c.u[8],c.u[7]),
+ 17:c=>R(c.u[3]+c.u[9]+c.u[5],c.u[1]+c.u[7]), 18:c=>R(c.u[3]+c.u[5],c.u[1]), 19:c=>R(c.u[9],c.u[7]),
+ 20:c=>c.u[1], 21:c=>c.u[7], 22:c=>c.u[2], 23:c=>c.u[8], 24:c=>c.u[4], 25:c=>c.u[3], 26:c=>c.u[9], 27:c=>c.u[5],
+ 28:c=>R(c.u[1],c.u[0]), 29:c=>R(c.u[7],c.u[6]),
+ 31:c=>c.act, 32:c=>c.contracted, 33:c=>R(c.act,c.contracted), 34:c=>c.wd, 35:c=>c.we,
+ 37:c=>c.roster/60, 38:c=>c.shrink/60, 39:c=>R(c.shrink,c.roster), 40:c=>R((c.roster-c.shrink)/60,c.act),
+ 41:c=>(c.roster-c.shrink)/60, 42:c=>c.act?Math.round(c.netSC/60/c.act*100)/100:NaN, 43:c=>c.act?Math.round(c.netRpt/60/c.act*100)/100:NaN,
+ 45:c=>c.bookP, 46:c=>c.doneP, 47:c=>R(c.doneP,c.bookP),
+ 49:c=>c.b[6], 50:c=>c.b[15]+c.b[18], 51:c=>c.b[15], 52:c=>c.b[18], 53:c=>c.b[9], 54:c=>c.b[12],
+ 55:c=>c.b[6]-(c.b[15]+c.b[18])-c.b[9]-c.b[12],
+ 56:c=>R(c.b[9],c.b[18]+c.b[9]+c.b[12]), 57:c=>R(c.b[15]+c.b[18],c.b[6]), 58:c=>R(c.b[9],c.b[6]), 59:c=>R(c.b[12],c.b[6]),
+ 60:c=>R(c.b[6]-(c.b[15]+c.b[18])-c.b[9]-c.b[12],c.b[6]),
+ 62:c=>c.b[6]-((c.b[15]+c.b[18])+(c.b[6]-(c.b[15]+c.b[18])-c.b[9]-c.b[12])),
+ 63:c=>c.b[21], 64:c=>R(c.b[21],c.b[6]), 65:c=>c.b[25], 66:c=>R(c.b[25],c.b[21]),
+ 67:c=>c.b[22], 68:c=>R(c.b[22],c.b[6]), 69:c=>c.b[26], 70:c=>R(c.b[26],c.b[22]),
+ 71:c=>c.b[23], 72:c=>R(c.b[23],c.b[6]), 73:c=>c.b[27], 74:c=>R(c.b[27],c.b[23]),
+ 75:c=>c.b[24], 76:c=>R(c.b[24],c.b[6]), 77:c=>c.b[28], 78:c=>R(c.b[28],c.b[24]),
+ 80:c=>c.b[29], 81:c=>R(c.b[29],c.b[6]), 82:c=>c.b[30], 83:c=>R(c.b[30],c.b[29]),
+ 84:c=>c.b[31], 85:c=>R(c.b[31],c.b[29]), 86:c=>c.b[32], 87:c=>R(c.b[32],c.b[29]),
+ 88:c=>c.b[33], 89:c=>R(c.b[33],c.b[32]), 90:c=>c.b[34], 91:c=>R(c.b[34],c.b[29]), 92:c=>c.b[35], 93:c=>R(c.b[35],c.b[34]),
+ 95:c=>c.d[1], 96:c=>R(c.d[28]+c.d[34]+c.d[40],c.d[1]), 97:c=>c.d[4], 98:c=>R(CALC[99](c),CALC[96](c)),
+ 99:c=>R(c.d[10]+c.d[16]+c.d[22],c.d[4]), 100:c=>{const v=CALC[99](c)*CALC[98](c);return isFinite(v)?v:NaN;},
+ 102:c=>c.d[25], 103:c=>R(c.d[25],c.d[1]), 104:c=>R(c.d[28],c.d[25]), 105:c=>c.d[7], 106:c=>R(c.d[7],c.d[25]),
+ 107:c=>R(c.d[10],c.d[7]), 108:c=>R(c.d[10],c.d[1])
+};
+
+/* ---- formatting ---- */
+const nfC=new Intl.NumberFormat('en-IN',{maximumFractionDigits:0});
+function fmt(v,code){
+  if(v==null||!isFinite(v))return '<span class="dimv">-</span>';
+  if(code==='pct0')return Math.round(v*100)+'%';
+  if(code==='pct1')return (v*100).toFixed(1)+'%';
+  if(code==='dec1')return v.toFixed(1);
+  if(code==='acct')return v===0?'<span class="dimv">-</span>':nfC.format(Math.round(v));
+  if(code==='num')return nfC.format(Math.round(v));
+  if(code==='int')return nfC.format(Math.round(v));
+  // gen
+  return Math.abs(v-Math.round(v))<1e-9?nfC.format(Math.round(v)):(Math.abs(v)<100?v.toFixed(2):nfC.format(Math.round(v)));
+}
+/* red->green heat per row across weekly cols */
+const HL=[230,124,115],HM=[255,255,255],HH=[87,187,138];
+const lerp=(a,b,t)=>a.map((x,i)=>Math.round(x+(b[i]-x)*t));
+function heatRange(vals){const s=vals.filter(v=>isFinite(v)).sort((a,b)=>a-b);if(s.length<2||s[0]===s[s.length-1])return null;
+  const m=s.length%2?s[(s.length-1)/2]:(s[s.length/2-1]+s[s.length/2])/2;return{mn:s[0],md:m,mx:s[s.length-1]};}
+function heatColor(v,h){let c;if(v<=h.md)c=lerp(HL,HM,h.md>h.mn?(v-h.mn)/(h.md-h.mn):1);else c=lerp(HM,HH,h.mx>h.md?(v-h.md)/(h.mx-h.md):1);return`rgb(${c[0]},${c[1]},${c[2]})`;}
+
+/* ---- filters ---- */
+function fill(sel,names,idxs,cur){
+  const opts=idxs.filter(i=>names[i]&&names[i].trim()).sort((a,b)=>names[a].localeCompare(names[b]));
+  sel.innerHTML='<option value="-1">All</option>'+opts.map(i=>`<option value="${i}">${names[i]}</option>`).join('');
+  sel.value=opts.includes(cur)?cur:'-1'; return +sel.value;
+}
+// derive clinic->city and doctor->(city,clinic) from data for cascading
+const clinicCity=new Map(),docKey=new Map();
+for(const src of [DATA.rev,DATA.util,DATA.avail,DATA.book,DATA.d2p]){
+  for(const r of src){ if(!clinicCity.has(r[2]))clinicCity.set(r[2],new Set()); clinicCity.get(r[2]).add(r[1]);
+    if(!docKey.has(r[3]))docKey.set(r[3],new Set()); docKey.get(r[3]).add(r[1]+'|'+r[2]); }
+}
+function rebuildFilters(){
+  st.city=fill(document.getElementById('fCity'),CITIES,CITIES.map((_,i)=>i),st.city);
+  const cl=[...clinicCity.keys()].filter(c=>st.city<0||clinicCity.get(c).has(st.city));
+  st.clinic=fill(document.getElementById('fClinic'),CLINICS,cl,st.clinic);
+  const dk=[...docKey.keys()].filter(d=>{for(const k of docKey.get(d)){const[c,l]=k.split('|').map(Number);
+    if((st.city<0||c===st.city)&&(st.clinic<0||l===st.clinic))return true;}return false;});
+  st.doc=fill(document.getElementById('fDoc'),DOCTORS,dk,st.doc);
+}
+
+/* ---- render ---- */
+function render(){
+  const {BUCK,CTX}=compute();
+  const NB=BUCK.length;
+  // header
+  let h1='<tr><th class="mcol">Metric</th>';
+  let h2='<tr><th class="mcol"></th>';
+  BUCK.forEach((bk,j)=>{const cur=bk.cur?' cur':'';
+    h1+=`<th class="${cur}">${bk.lab}</th>`;
+    h2+=`<th class="${cur}" style="font-weight:400;color:var(--ink3)">${bk.sub}</th>`;});
+  document.querySelector('#grid thead').innerHTML=h1+'</tr>'+h2+'</tr>';
+
+  const WHEAT=[]; for(let j=4;j<=10;j++)WHEAT.push(j); // W-1..W-7 columns get the colour scale
+  let body='',zeb=0,lastSec='';
+  for(const row of ROWSPEC){
+    if(row.a && row.a!==lastSec){ lastSec=row.a;
+      const secName=row.a.replace(/\n/g,' · ').replace('<>','');
+      body+=`<tr class="sec"><td class="mcol">${secName}</td><td colspan="${NB}"></td></tr>`;
+    }
+    const vals=BUCK.map((_,j)=>CALC[row.r]?CALC[row.r](CTX[j]):NaN);
+    const heat=(row.cf&&row.cf.includes('colorScale'))?heatRange(WHEAT.map(j=>vals[j])):null;
+    const zc=(zeb++%2)?' zeb':'';
+    body+=`<tr class="${zc}"><td class="mcol" style="font-size:${Math.max(row.sz,10)}px">${row.m.replace(/\n/g,' ')}</td>`;
+    for(let j=0;j<NB;j++){
+      const v=vals[j], cur=BUCK[j].cur?' cur':'';
+      const al=row.ca||'right';
+      let cls='', st2=`text-align:${al};font-size:${row.sz}px`+(row.bold?';font-weight:700':'');
+      if(heat&&WHEAT.includes(j)&&isFinite(v)){cls='heat';st2+=`;background:${heatColor(v,heat)}`;}
+      body+=`<td class="${cls}${cur}" style="${st2}">${fmt(v,row.fmt)}</td>`;
+    }
+    body+='</tr>';
+  }
+  document.querySelector('#grid tbody').innerHTML=body;
+  const parts=[]; if(st.city>=0)parts.push('City: '+CITIES[st.city]);
+  if(st.clinic>=0)parts.push('Clinic: '+CLINICS[st.clinic]); if(st.doc>=0)parts.push('Doctor: '+DOCTORS[st.doc]);
+  document.getElementById('meta').textContent=(parts.length?parts.join(' · '):'All cities · clinics · doctors')+
+    ' · through '+fmtDay(addD(TODAY,-1));
+}
+
+for(const id of ['fCity','fClinic','fDoc'])
+  document.getElementById(id).addEventListener('change',e=>{
+    st[{fCity:'city',fClinic:'clinic',fDoc:'doc'}[id]]=+e.target.value;
+    if(id==='fCity'){st.clinic=-1;st.doc=-1;} if(id==='fClinic')st.doc=-1;
+    rebuildFilters();render();});
+document.getElementById('reset').addEventListener('click',()=>{st.city=st.clinic=st.doc=-1;rebuildFilters();render();});
+const themeBtn=document.getElementById('themeBtn');
+function applyTheme(t){document.documentElement.dataset.theme=t;themeBtn.textContent=t==='dark'?'☀️ Light':'🌙 Dark';try{localStorage.setItem('micro-theme',t)}catch(e){}}
+themeBtn.addEventListener('click',()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
+applyTheme((()=>{try{return localStorage.getItem('micro-theme')||'light'}catch(e){return'light'}})());
+rebuildFilters();render();
+</script>
+</body>
+</html>
