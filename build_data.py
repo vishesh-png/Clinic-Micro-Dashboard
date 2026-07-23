@@ -59,7 +59,7 @@ rev = defaultdict(float)              # (ord,ci,cl,doc,ch) -> pay
 util = defaultdict(lambda: [0.0]*10)  # (ord,ci,cl,doc) -> [E,F,H,J,L,N,O,P,R,T]
 avail = {}                            # (ord,ci,cl,doc) -> [roster,shrink,netSC,netRpt, wknd(0/1)]
 book = defaultdict(lambda: [0.0]*36)  # (ord,ci,cl,doc) -> cols E..AN (idx4..39)
-d2p = defaultdict(lambda: [0.0]*41)   # (ord,ci,cl,doc,diag) -> cols F..AT (idx5..45)
+d2p = defaultdict(lambda: [0.0]*42)   # (ord,ci,cl,doc,diag) -> cols F..AU (idx5..46)
 pat = []                              # [ord,ci,cl,doc,patI, typeFlag(0=SC,1=FU), offlineFlag, completed]
 
 # ---- RD-Rev ----
@@ -116,7 +116,7 @@ for r in sh.iter_rows(min_row=2, values_only=True):
     dg = reg(diags, r[4]) if len(r) > 4 else reg(diags, '')
     k = (o, reg(cities, r[1]), reg(clinics, r[2]), reg(doctors, r[3]), dg)
     a = d2p[k]
-    for i in range(41):
+    for i in range(42):
         ci = 5 + i
         if ci < len(r): a[i] += num(r[ci])
 

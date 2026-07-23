@@ -146,9 +146,9 @@ function compute(){
   for(const r of DATA.book){ if(!match(r[1],r[2],r[3]))continue; const day=r[0];
     for(let i=0;i<36;i++)B[i][day]+=r[4+i]; }
   const ND=DATA.diagnoses.length;
-  const DdD=[]; for(let g=0;g<ND;g++){const arr=[];for(let i=0;i<41;i++)arr.push(new Float64Array(SPAN));DdD.push(arr);}
+  const DdD=[]; for(let g=0;g<ND;g++){const arr=[];for(let i=0;i<42;i++)arr.push(new Float64Array(SPAN));DdD.push(arr);}
   for(const r of DATA.d2p){ if(!match(r[1],r[2],r[3]))continue; const day=r[0],g=r[4],arr=DdD[g];
-    for(let i=0;i<41;i++)arr[i][day]+=r[5+i]; }
+    for(let i=0;i<42;i++)arr[i][day]+=r[5+i]; }
   // patients subset (filter)
   const patF=[]; for(const r of DATA.pat){ if(match(r[1],r[2],r[3]))patF.push(r); }
 
@@ -181,8 +181,8 @@ function compute(){
       bset.add(r[4]); if(r[7]===1)dset.add(r[4]);
     }
     const dDiag=P.DdD.map(arr=>arr.map(pre=>rs(pre)));   // [ND][41]
-    const dOverall=new Array(41).fill(0);
-    for(let g=0;g<dDiag.length;g++)for(let i=0;i<41;i++)dOverall[i]+=dDiag[g][i];
+    const dOverall=new Array(42).fill(0);
+    for(let g=0;g<dDiag.length;g++)for(let i=0;i<42;i++)dOverall[i]+=dDiag[g][i];
     return {rev:{overall:rs(P.revAll),off:rs(P.revOff),on:rs(P.revOn),rep:rs(P.revRep),oth:rs(P.revOth)},
       u:P.U.map(pre=>rs(pre)),
       roster:rs(P.roster),shrink:rs(P.shrink),netSC:rs(P.netSC),netRpt:rs(P.netRpt),
