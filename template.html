@@ -56,6 +56,7 @@ td.mono{font-variant-numeric:tabular-nums}
 .grp{color:var(--ink3);font-size:10px;font-weight:600;padding-left:8px}
 tbody tr:hover td:not(.heat):not(.cur),tbody tr:hover .mcol{background:var(--accent-soft)}
 .dimv{color:var(--ink3)}
+td.ge,th.ge{border-right:2px solid var(--ink3)}
 </style>
 </head>
 <body>
@@ -307,10 +308,12 @@ function rebuildFilters(){
 function render(){
   const {BUCK,CTX}=compute();
   const NB=BUCK.length;
+  // vertical dividers separating the Month | Week | Day groups (after M-2=idx2, W-7=idx10)
+  const ge=j=>(j===2||j===10)?' ge':'';
   // header
   let h1='<tr><th class="mcol">Metric</th>';
   let h2='<tr><th class="mcol"></th>';
-  BUCK.forEach((bk,j)=>{const cur=bk.cur?' cur':'';
+  BUCK.forEach((bk,j)=>{const cur=(bk.cur?' cur':'')+ge(j);
     h1+=`<th class="${cur}">${bk.lab}</th>`;
     h2+=`<th class="${cur}" style="font-weight:400;color:var(--ink3)">${bk.sub}</th>`;});
   document.querySelector('#grid thead').innerHTML=h1+'</tr>'+h2+'</tr>';
@@ -325,13 +328,15 @@ function render(){
     const vals=BUCK.map((_,j)=>CALC[row.r]?CALC[row.r](CTX[j]):NaN);
     const heat=(row.cf&&row.cf.includes('colorScale'))?heatRange(WHEAT.map(j=>vals[j])):null;
     const zc=(zeb++%2)?' zeb':'';
-    body+=`<tr class="${zc}"><td class="mcol" style="font-size:${Math.max(row.sz,10)}px">${row.m.replace(/\n/g,' ')}</td>`;
+    // metric label follows the sheet's B-column alignment (encodes the indent / grouping) and size
+    const lAl=row.ba||'left', lSz=Math.max(row.sz,9);
+    body+=`<tr class="${zc}"><td class="mcol" style="text-align:${lAl};font-size:${lSz}px${row.bold?';font-weight:700':''}">${row.m.replace(/\n/g,' ')}</td>`;
     for(let j=0;j<NB;j++){
       const v=vals[j], cur=BUCK[j].cur?' cur':'';
       const al=row.ca||'right';
       let cls='', st2=`text-align:${al};font-size:${row.sz}px`+(row.bold?';font-weight:700':'');
       if(heat&&WHEAT.includes(j)&&isFinite(v)){cls='heat';st2+=`;background:${heatColor(v,heat)}`;}
-      body+=`<td class="${cls}${cur}" style="${st2}">${fmt(v,row.fmt)}</td>`;
+      body+=`<td class="${cls}${cur}${ge(j)}" style="${st2}">${fmt(v,row.fmt)}</td>`;
     }
     body+='</tr>';
   }
