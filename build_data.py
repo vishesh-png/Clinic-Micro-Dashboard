@@ -32,7 +32,7 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, 'data.json')
 wb = openpyxl.load_workbook(XLSX, read_only=True, data_only=True)
 
 # ---- shared dimension registries (display name + casefold match, Excel-style) ----
-cities, clinics, doctors, channels, patients = {}, {}, {}, {}, {}
+cities, clinics, doctors, channels, patients, diags = {}, {}, {}, {}, {}, {}
 def reg(d, name):
     key = (name or '').strip()
     if key not in d:
@@ -59,7 +59,7 @@ rev = defaultdict(float)              # (ord,ci,cl,doc,ch) -> pay
 util = defaultdict(lambda: [0.0]*10)  # (ord,ci,cl,doc) -> [E,F,H,J,L,N,O,P,R,T]
 avail = {}                            # (ord,ci,cl,doc) -> [roster,shrink,netSC,netRpt, wknd(0/1)]
 book = defaultdict(lambda: [0.0]*36)  # (ord,ci,cl,doc) -> cols E..AN (idx4..39)
-d2p = defaultdict(lambda: [0.0]*41)   # (ord,ci,cl,doc) -> cols F..AT (idx5..45)
+d2p = defaultdict(lambda: [0.0]*41)   # (ord,ci,cl,doc,diag) -> cols F..AT (idx5..45)
 pat = []                              # [ord,ci,cl,doc,patI, typeFlag(0=SC,1=FU), offlineFlag, completed]
 
 # ---- RD-Rev ----
@@ -113,7 +113,8 @@ sh = wb['RD - D2P']
 for r in sh.iter_rows(min_row=2, values_only=True):
     if not r or r[0] is None: continue
     o = dayoff(r[0])
-    k = (o, reg(cities, r[1]), reg(clinics, r[2]), reg(doctors, r[3]))
+    dg = reg(diags, r[4]) if len(r) > 4 else reg(diags, '')
+    k = (o, reg(cities, r[1]), reg(clinics, r[2]), reg(doctors, r[3]), dg)
     a = d2p[k]
     for i in range(41):
         ci = 5 + i
@@ -150,11 +151,12 @@ data = {
     'clinics': list(clinics.keys()),
     'doctors': list(doctors.keys()),
     'channels': list(channels.keys()),
+    'diagnoses': list(diags.keys()),
     'rev':   [[rb(k[0]), k[1], k[2], k[3], k[4], round(v, 2)] for k, v in rev.items()],
     'util':  [[rb(k[0]), k[1], k[2], k[3]] + [round(x, 2) for x in v] for k, v in util.items()],
     'avail': [[rb(k[0]), k[1], k[2], k[3]] + [round(v[0], 2), round(v[1], 2), round(v[2], 2), round(v[3], 2), v[4]] for k, v in avail.items()],
     'book':  [[rb(k[0]), k[1], k[2], k[3]] + [round(x, 2) for x in v] for k, v in book.items()],
-    'd2p':   [[rb(k[0]), k[1], k[2], k[3]] + [round(x, 2) for x in v] for k, v in d2p.items()],
+    'd2p':   [[rb(k[0]), k[1], k[2], k[3], k[4]] + [round(x, 2) for x in v] for k, v in d2p.items()],
     'pat':   [[rb(p[0]), p[1], p[2], p[3], p[4], p[5], p[6], p[7]] for p in pat],
 }
 bd = date.fromordinal(base)
